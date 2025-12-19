@@ -276,6 +276,12 @@ Instructions can be found at [wax/readme.br0ker.md](./wax/readme.br0ker.md)
   - The complete boot process from firmware to payload
   - Step-by-step guide for creating custom shim payloads
   
+- **[BUILDING_FROM_SCRATCH.md](BUILDING_FROM_SCRATCH.md)** - Deep dive into building minimal shims without wax:
+  - How wax.sh works internally
+  - Manual partition manipulation steps
+  - Creating ultra-minimal shims (under 100MB)
+  - Complete standalone build script
+  
 - **[Custom Payload Examples](examples/)** - Hands-on examples including:
   - Hello World example with full source code
   - Payload structure and best practices

@@ -22,6 +22,7 @@ This document provides a quick navigation guide to all SH1MMER documentation.
 
 ### For Payload Developers
 - **[wax/readme.br0ker.md](wax/readme.br0ker.md)** - Building shims with Br0ker update payloads
+- **[BUILDING_FROM_SCRATCH.md](BUILDING_FROM_SCRATCH.md)** - Build minimal shims without wax (advanced)
 - **Payload Implementations**:
   - `wax/sh1mmer_bw/` - Beautiful World GUI payload (recommended)
   - `wax/sh1mmer_legacy/` - Legacy CLI payload
@@ -52,6 +53,42 @@ This document provides a quick navigation guide to all SH1MMER documentation.
    - Complete "Hello World" example
    - Understanding payload structure
    - What you can and cannot do
+
+### BUILDING_FROM_SCRATCH.md (NEW - 16,772 characters)
+
+**Deep dive for advanced users who want to build without wax:**
+
+1. **Understanding RMA Shim Structure**
+   - Original partition layout
+   - Why the exploit works
+   - What can be modified
+
+2. **Core Concepts**
+   - The read-only bit (0x464 offset)
+   - Partition table manipulation with cgpt/sfdisk
+   - Loop device setup
+
+3. **The Critical Exploit Mechanism**
+   - How boot hijack works
+   - Two-stage boot process
+   - lsb-factory file importance
+
+4. **Step-by-Step Build Process**
+   - Enable RW access on partitions
+   - Shrink ROOT-A to minimum
+   - Create bootloader partition
+   - Create SH1MMER partition
+   - Partition swapping technique
+
+5. **Minimal Build Script**
+   - Complete standalone script (no wax dependencies)
+   - Under 100 lines
+   - Creates ~90MB shim (vs 1GB+ with wax)
+
+6. **Advanced Optimization**
+   - Ultra-minimal approaches
+   - Size calculations
+   - Understanding what can/cannot be modified
 
 ### examples/README.md (331 lines)
 
