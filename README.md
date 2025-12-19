@@ -16,6 +16,9 @@ RMA shims are a factory tool allowing certain authorization functions to be sign
 but only the KERNEL partitions are checked for signatures by the firmware.
 We can edit the other partitions to our will as long as we remove the forced readonly bit on them.
 
+> [!TIP]
+> **For developers and researchers:** See [EXPLOIT_FLOW.md](EXPLOIT_FLOW.md) for a comprehensive technical explanation of how the exploit works, the build process, boot sequence, and how to create custom shim payloads.
+
 ## How do I use it?
 
 > [!NOTE]
@@ -106,6 +109,21 @@ From here, you can play around with the options and do what you want.
 > [!NOTE]
 > On `hana` and `elm` devices, you may need to re-enter recovery mode quickly after enabling developer mode
 > (skipping the "OS verification is OFF" screen).
+
+***
+
+### Creating Custom Payloads
+
+Want to create your own custom shim with a personalized message or functionality? Check out the [examples directory](examples/) which includes:
+
+- **[Hello World Example](examples/hello_world/)** - A minimal working example showing how to create a custom payload that displays a message and provides a simple menu
+- **[Examples README](examples/README.md)** - Comprehensive guide on creating custom payloads, understanding payload structure, and best practices
+
+These examples are perfect for:
+- Learning how SH1MMER works internally
+- Creating diagnostic or information display shims
+- Building custom automation tools
+- Educational and research purposes
 
 ***
 ## Patch information and workarounds
@@ -249,6 +267,19 @@ You can also bundle the update file with the shim to automatically downgrade the
 Instructions can be found at [wax/readme.br0ker.md](./wax/readme.br0ker.md)
 
 </details>
+
+## Documentation
+
+- **[EXPLOIT_FLOW.md](EXPLOIT_FLOW.md)** - Comprehensive technical documentation explaining:
+  - How the SH1MMER exploit works at a technical level
+  - The build process and partition manipulation
+  - The complete boot process from firmware to payload
+  - Step-by-step guide for creating custom shim payloads
+  
+- **[Custom Payload Examples](examples/)** - Hands-on examples including:
+  - Hello World example with full source code
+  - Payload structure and best practices
+  - Common use cases and customization ideas
 
 ## Credits
 
