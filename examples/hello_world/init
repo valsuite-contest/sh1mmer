@@ -1,0 +1,41 @@
+#!/bootstrap/busybox sh
+
+# Simple Hello World SH1MMER Init Script
+# This is the entry point for the custom shim payload
+
+set -eE
+
+STATEFUL_MNT="$1"
+
+fail() {
+	printf "%b\nAborting.\n" "$*" >&2
+	tail -f /dev/null
+	exit 1
+}
+
+trap 'fail "An unhandled error occurred."' ERR
+
+# Detect architecture
+ARCHITECTURE="$(uname -m)"
+case "$ARCHITECTURE" in
+	*x86_64* | *x86-64*) ARCHITECTURE=x86_64 ;;
+	*aarch64* | *armv8*) ARCHITECTURE=aarch64 ;;
+	*) ARCHITECTURE=x86_64 ;;
+esac
+
+# Setup basic environment
+rm -rf /bin || :
+mkdir -p /bin
+
+# Copy busybox and scripts from SH1MMER partition
+[ -d "$STATEFUL_MNT/bootstrap/noarch" ] && cp -R "$STATEFUL_MNT/bootstrap/noarch/"* /bin
+[ -d "$STATEFUL_MNT/bootstrap/$ARCHITECTURE" ] && cp -R "$STATEFUL_MNT/bootstrap/$ARCHITECTURE/"* /bin
+
+export PATH=/bin
+busybox --install /bin
+
+# Execute the main hello world script
+exec /bin/hello_world.sh "$@" "$ARCHITECTURE" || :
+
+# Should never reach here
+fail "Failed to execute hello_world.sh"
