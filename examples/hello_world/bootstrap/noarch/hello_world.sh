@@ -48,8 +48,8 @@ echo ""
 # Try to find ChromeOS root filesystem
 printf "${COLOR_YELLOW}Attempting to identify ChromeOS installation...${COLOR_RESET}\n"
 ROOTFS_DEV=""
-bootstrap_num="$(echo "$BOOTSTRAP_DEV" | grep -o '[0-9]*$')"
-ROOTFS_DEV="$(echo "$BOOTSTRAP_DEV" | sed 's/[0-9]*$//')$((bootstrap_num + 1))"
+bootstrap_num="${BOOTSTRAP_DEV##*[!0-9]}"
+ROOTFS_DEV="${BOOTSTRAP_DEV%${bootstrap_num}}$((bootstrap_num + 1))"
 
 if [ -b "$ROOTFS_DEV" ]; then
     echo "  Root Device:       $ROOTFS_DEV"
@@ -63,7 +63,9 @@ if [ -b "$ROOTFS_DEV" ]; then
             echo "  ChromeOS Version:  $VERSION"
             echo "  Board:             $BOARD"
         fi
-        umount "$ROOTFS_MNT" 2>/dev/null || :
+        if ! umount "$ROOTFS_MNT" 2>/dev/null; then
+            echo "  Warning: Failed to unmount $ROOTFS_MNT" >&2
+        fi
     fi
     rmdir "$ROOTFS_MNT" 2>/dev/null || :
 else
@@ -84,7 +86,7 @@ echo ""
 
 # Show available block devices
 printf "${COLOR_YELLOW}Available Storage Devices:${COLOR_RESET}\n"
-lsblk -d -o NAME,SIZE,TYPE 2>/dev/null | tail -n +2 | awk '{print "  /dev/" $1 " (" $2 ")"}' || echo "  Unable to list devices"
+lsblk -d -o NAME,SIZE,TYPE --noheadings 2>/dev/null | awk '{print "  /dev/" $1 " (" $2 ")"}' || echo "  Unable to list devices"
 echo ""
 
 # Simple menu
@@ -119,7 +121,7 @@ while true; do
         2)
             echo ""
             printf "${COLOR_GREEN}Partition Layout:${COLOR_RESET}\n"
-            lsblk -o NAME,SIZE,TYPE,MOUNTPOINT 2>/dev/null || echo "Unable to read partition table"
+            lsblk -o NAME,SIZE,TYPE,MOUNTPOINT --noheadings 2>/dev/null || echo "Unable to read partition table"
             echo ""
             echo "Press Enter to continue..."
             read -r
