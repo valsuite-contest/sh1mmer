@@ -41,7 +41,7 @@ echo "  Bootstrap Device:  $BOOTSTRAP_DEV"
 echo ""
 
 printf "${COLOR_YELLOW}Hardware:${COLOR_RESET}\n"
-echo "  CPU:               $(cat /proc/cpuinfo | grep "model name" | head -1 | cut -d: -f2 | xargs)"
+echo "  CPU:               $(grep "model name" /proc/cpuinfo | head -1 | cut -d: -f2 | xargs)"
 echo "  Memory:            $(free -h | awk '/^Mem:/ {print $2}')"
 echo ""
 
@@ -84,7 +84,7 @@ echo ""
 
 # Show available block devices
 printf "${COLOR_YELLOW}Available Storage Devices:${COLOR_RESET}\n"
-ls -l /dev/sd* /dev/mmcblk* /dev/nvme* 2>/dev/null | grep "^b" | awk '{print "  " $NF}' || echo "  None found"
+lsblk -d -o NAME,SIZE,TYPE 2>/dev/null | tail -n +2 | awk '{print "  /dev/" $1 " (" $2 ")"}' || echo "  Unable to list devices"
 echo ""
 
 # Simple menu
@@ -119,7 +119,7 @@ while true; do
         2)
             echo ""
             printf "${COLOR_GREEN}Partition Layout:${COLOR_RESET}\n"
-            fdisk -l 2>/dev/null | grep -E "^Disk |^/dev" || echo "Unable to read partition table"
+            lsblk -o NAME,SIZE,TYPE,MOUNTPOINT 2>/dev/null || echo "Unable to read partition table"
             echo ""
             echo "Press Enter to continue..."
             read -r
