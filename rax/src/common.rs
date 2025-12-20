@@ -1,22 +1,21 @@
 use colored::Colorize;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Once;
 
 static INIT_LOGGER: Once = Once::new();
-static mut DEBUG_MODE: bool = false;
+static DEBUG_MODE: AtomicBool = AtomicBool::new(false);
 
 pub struct Logger;
 
 impl Logger {
     pub fn init(debug: bool) {
         INIT_LOGGER.call_once(|| {
-            unsafe {
-                DEBUG_MODE = debug;
-            }
+            DEBUG_MODE.store(debug, Ordering::Relaxed);
         });
     }
 
     pub fn is_debug() -> bool {
-        unsafe { DEBUG_MODE }
+        DEBUG_MODE.load(Ordering::Relaxed)
     }
 }
 

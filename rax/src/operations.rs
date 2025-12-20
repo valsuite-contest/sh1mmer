@@ -191,16 +191,27 @@ impl WaxOperations {
         Ok(())
     }
 
-    fn delete_partitions_except(&self, _keep: &[u32]) -> Result<()> {
-        let output = Command::new("sfdisk")
-            .arg("--delete")
-            .arg(&self.image)
-            .args(vec!["1", "4", "5", "6", "7", "8", "9", "10", "11", "12"])
-            .output();
+    fn delete_partitions_except(&self, keep: &[u32]) -> Result<()> {
+        // Delete all partitions except the ones we want to keep
+        // In practice, we want to keep partitions 2 (KERN-A) and 3 (ROOT-A)
+        let all_partitions: Vec<u32> = (1..=12).collect();
+        let to_delete: Vec<String> = all_partitions
+            .iter()
+            .filter(|&p| !keep.contains(p))
+            .map(|p| p.to_string())
+            .collect();
 
-        // It's okay if this fails - partitions might not exist
-        if output.is_err() {
-            log_debug("Some partitions couldn't be deleted (they might not exist)");
+        if !to_delete.is_empty() {
+            let output = Command::new("sfdisk")
+                .arg("--delete")
+                .arg(&self.image)
+                .args(&to_delete)
+                .output();
+
+            // It's okay if this fails - partitions might not exist
+            if output.is_err() {
+                log_debug("Some partitions couldn't be deleted (they might not exist)");
+            }
         }
 
         Ok(())
@@ -362,8 +373,13 @@ impl WaxOperations {
         let loopdev = self.loopdev.as_ref().unwrap();
         let _part4 = format!("{}p4", loopdev);
 
-        // This is a simplified version - the real implementation would use cgpt
-        // For now, we'll log that this operation would happen
+        // TODO: Full implementation requires:
+        // 1. Use cgpt to create partition 4 with proper size
+        // 2. Format as ext2 filesystem
+        // 3. Mount the partition
+        // 4. Copy bootloader files from bootloader_dir
+        // 5. Set proper permissions
+        // 6. Unmount
         log_warn("Bootloader partition creation not fully implemented in this version");
         log_info(&format!("Would create partition 4 with size {} and copy bootloader files", format_bytes(self.bootloader_part_size)));
 
@@ -376,7 +392,15 @@ impl WaxOperations {
         let loopdev = self.loopdev.as_ref().unwrap();
         let _part1 = format!("{}p1", loopdev);
 
-        // This is a simplified version
+        // TODO: Full implementation requires:
+        // 1. Use cgpt to create partition 1 with proper size
+        // 2. Format as ext4 filesystem
+        // 3. Mount the partition
+        // 4. Create required directories (dev_image/etc, dev_image/factory/sh)
+        // 5. Copy payload files from payload_dir
+        // 6. Copy extra payloads, firmware, chromebrew if specified
+        // 7. Set proper permissions
+        // 8. Unmount
         log_warn("SH1MMER partition creation not fully implemented in this version");
         log_info(&format!("Would create partition 1 with size {} and copy payload files", format_bytes(self.sh1mmer_part_size)));
 
@@ -386,7 +410,12 @@ impl WaxOperations {
     fn truncate_image(&self) -> Result<()> {
         log_info("Truncating image to optimal size");
 
-        // This is a simplified version
+        // TODO: Full implementation requires:
+        // 1. Get sector size and final sector from image
+        // 2. Calculate end bytes with buffer
+        // 3. Truncate image file to optimal size
+        // 4. Fix GPT backup table
+        // 5. Write final size to finalsizefile if specified
         log_warn("Image truncation not fully implemented in this version");
 
         if let Some(ref finalsizefile) = self.finalsizefile {
