@@ -4,7 +4,10 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use crate::cli::Args;
-use crate::common::{format_bytes, log_debug, log_info, log_warn, parse_bytes};
+use crate::common::{format_bytes, log_debug, log_info, parse_bytes};
+
+// Magic number to ensure proper GPT alignment - buffer sectors after final partition
+const GPT_BUFFER_SECTORS: u64 = 35;
 
 /// Configuration for building a shim image
 #[derive(Debug, Clone)]
@@ -123,18 +126,20 @@ pub struct WaxOperations {
 }
 
 impl WaxOperations {
-    pub fn new(args: Args) -> Result<Self> {
-        let config = ShimConfig::from_args(args)?;
-        
-        // Determine cgpt path based on host architecture
+    // Helper to get cgpt path based on host architecture
+    fn get_cgpt_path() -> PathBuf {
         let host_arch = std::env::consts::ARCH;
         let cgpt_arch = match host_arch {
             "x86_64" => "x86_64",
             "aarch64" => "aarch64",
             _ => "x86_64", // default fallback
         };
-        
-        let cgpt_path = PathBuf::from(format!("wax/lib/bin/{}/cgpt", cgpt_arch));
+        PathBuf::from(format!("wax/lib/bin/{}/cgpt", cgpt_arch))
+    }
+
+    pub fn new(args: Args) -> Result<Self> {
+        let config = ShimConfig::from_args(args)?;
+        let cgpt_path = Self::get_cgpt_path();
         
         Ok(Self {
             config,
@@ -146,14 +151,7 @@ impl WaxOperations {
     /// Create a WaxOperations instance with a custom configuration
     /// This allows using rax as a library for custom shim building
     pub fn with_config(config: ShimConfig) -> Result<Self> {
-        let host_arch = std::env::consts::ARCH;
-        let cgpt_arch = match host_arch {
-            "x86_64" => "x86_64",
-            "aarch64" => "aarch64",
-            _ => "x86_64",
-        };
-        
-        let cgpt_path = PathBuf::from(format!("wax/lib/bin/{}/cgpt", cgpt_arch));
+        let cgpt_path = Self::get_cgpt_path();
         
         Ok(Self {
             config,
@@ -652,7 +650,7 @@ impl WaxOperations {
         }
 
         // Make everything executable
-        self.chmod_recursive(&mount_point, 0o755)?;
+        self.chmod_recursive(&mount_point)?;
 
         // Unmount
         Command::new("umount")
@@ -717,7 +715,7 @@ impl WaxOperations {
 
         log_info("Copying main payload");
         self.copy_dir_contents(&self.config.payload_dir, &mount_point)?;
-        self.chmod_recursive(&mount_point, 0o755)?;
+        self.chmod_recursive(&mount_point)?;
 
         // Copy extra payload if provided
         if let Some(ref extra_dir) = self.config.extra_payload_dir {
@@ -752,13 +750,21 @@ impl WaxOperations {
             fs::create_dir_all(&target_dir)?;
 
             // Extract tar with pv for progress
+            // Use proper shell quoting to prevent command injection
+            let chromebrew_path = chromebrew.to_str()
+                .ok_or_else(|| anyhow::anyhow!("Invalid chromebrew path"))?;
+            let target_path = target_dir.to_str()
+                .ok_or_else(|| anyhow::anyhow!("Invalid target path"))?;
+            
+            let cmd = format!(
+                "pv \"{}\" | tar -xzf - --strip-components=1 -C \"{}\"",
+                chromebrew_path.replace("\"", "\\\""),
+                target_path.replace("\"", "\\\"")
+            );
+            
             let status = Command::new("sh")
                 .arg("-c")
-                .arg(format!(
-                    "pv {} | tar -xzf - --strip-components=1 -C {}",
-                    chromebrew.display(),
-                    target_dir.display()
-                ))
+                .arg(&cmd)
                 .status()
                 .context("Failed to extract chromebrew")?;
 
@@ -782,10 +788,9 @@ impl WaxOperations {
         log_info("Truncating image to optimal size");
 
         let loopdev = self.loopdev.as_ref().unwrap();
-        let buffer = 35u64; // magic number to ward off evil gpt corruption spirits
         let sector_size = self.get_sector_size(loopdev)?;
         let final_sector = self.get_final_sector(loopdev)?;
-        let end_bytes = (final_sector + buffer) * sector_size;
+        let end_bytes = (final_sector + GPT_BUFFER_SECTORS) * sector_size;
 
         log_info(&format!("Truncating image to {}", format_bytes(end_bytes)));
 
@@ -817,28 +822,34 @@ impl WaxOperations {
 
     // Helper function to copy directory contents
     fn copy_dir_contents(&self, src: &Path, dst: &Path) -> Result<()> {
-        let status = Command::new("cp")
-            .arg("-R")
-            .arg(format!("{}/*", src.display()))
-            .arg(dst)
-            .status();
+        // Use shell to handle glob expansion safely
+        let status = Command::new("sh")
+            .arg("-c")
+            .arg(format!("cp -R \"{}\"/* \"{}\" 2>/dev/null || true", 
+                src.display(), 
+                dst.display()))
+            .status()
+            .context("Failed to execute copy command")?;
 
-        // It's ok if this fails (empty directory)
-        if let Err(e) = status {
-            log_debug(&format!("cp failed (might be empty dir): {}", e));
+        if !status.success() {
+            log_debug(&format!("cp returned non-zero (might be empty dir): {}", status));
         }
 
         Ok(())
     }
 
-    // Helper function to recursively chmod
-    fn chmod_recursive(&self, path: &Path, _mode: u32) -> Result<()> {
-        Command::new("chmod")
+    // Helper function to recursively set executable permissions
+    fn chmod_recursive(&self, path: &Path) -> Result<()> {
+        let status = Command::new("chmod")
             .arg("-R")
-            .arg(format!("+x"))
+            .arg("+x")
             .arg(path)
             .status()
             .context("Failed to chmod")?;
+
+        if !status.success() {
+            anyhow::bail!("chmod failed with status: {}", status);
+        }
 
         Ok(())
     }
