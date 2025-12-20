@@ -7,8 +7,6 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 mod partition;
-mod filesystem;
-mod payload;
 
 use partition::PartitionTable;
 
@@ -73,7 +71,7 @@ fn main() -> Result<()> {
     let _cleanup = CleanupGuard::new(loop_device.clone());
 
     println!("[3/7] Analyzing partition table...");
-    let mut pt = PartitionTable::read(&loop_device)?;
+    let pt = PartitionTable::read(&loop_device)?;
     pt.print_summary();
 
     println!("[4/7] Shrinking root partition...");

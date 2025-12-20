@@ -7,9 +7,6 @@ pub struct PartitionTable {
 
 pub struct Partition {
     pub number: u32,
-    pub start: u64,
-    pub end: u64,
-    pub size: u64,
     pub name: String,
 }
 
@@ -32,9 +29,6 @@ impl PartitionTable {
                         if let Ok(num) = num_str.parse::<u32>() {
                             partitions.push(Partition {
                                 number: num,
-                                start: 0,
-                                end: 0,
-                                size: 0,
                                 name: format!("partition {}", num),
                             });
                         }
