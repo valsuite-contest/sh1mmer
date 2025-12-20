@@ -1,0 +1,15 @@
+[package]
+name = "minshim"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+clap = { version = "4.4", features = ["derive"] }
+anyhow = "1.0"
+nix = { version = "0.27", features = ["mount", "ioctl", "user"] }
+uuid = "1.6"
+crc = "3.0"
+
+[[bin]]
+name = "minshim"
+path = "src/main.rs"
