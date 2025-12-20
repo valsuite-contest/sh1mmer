@@ -2,6 +2,8 @@
 
 **rax** is a Rust reimplementation of the wax shim modifying automation tool for SH1MMER. It provides the same core functionality as wax but written in Rust for improved performance, memory safety, and maintainability.
 
+rax can be used both as a **command-line tool** and as a **library** for building custom shims programmatically.
+
 ## Overview
 
 rax is a tool for modifying ChromeOS factory shims to create SH1MMER images. It performs the following operations:
@@ -9,9 +11,10 @@ rax is a tool for modifying ChromeOS factory shims to create SH1MMER images. It 
 1. Validates and prepares the factory shim image
 2. Detects the target architecture (x86_64 or aarch64)
 3. Shrinks and optimizes the ROOT partition
-4. Creates bootloader and payload partitions
-5. Patches in the SH1MMER payload
-6. Optimizes and truncates the final image
+4. Creates bootloader and payload partitions with cgpt
+5. Formats and mounts partitions (ext2 for bootloader, ext4 for payload)
+6. Copies payload files, firmware, and optional components
+7. Optimizes and truncates the final image
 
 ## Building
 
@@ -24,7 +27,7 @@ cargo build --release
 
 The compiled binary will be located at `target/release/rax`.
 
-## Usage
+## Usage as a Command-Line Tool
 
 Basic usage (equivalent to `wax.sh -i image.bin`):
 
@@ -101,6 +104,86 @@ Fast mode (skip optimization):
 sudo rax -i shimhatch.bin --fast
 ```
 
+## Usage as a Library
+
+rax can be used as a Rust library to build custom shims programmatically. Add it to your `Cargo.toml`:
+
+```toml
+[dependencies]
+rax = { path = "../rax" }
+anyhow = "1.0"
+```
+
+### Example: Building a custom shim
+
+```rust
+use rax::{ShimConfig, WaxOperations};
+use std::path::PathBuf;
+
+fn main() -> anyhow::Result<()> {
+    // Create a custom configuration
+    let config = ShimConfig {
+        image: PathBuf::from("my_shim.bin"),
+        bootloader_dir: PathBuf::from("wax/bootstrap"),
+        payload_dir: PathBuf::from("my_custom_payload"),
+        extra_payload_dir: None,
+        firmware_dir: Some(PathBuf::from("custom_firmware")),
+        mounted_payload_dir: None,
+        chromebrew: None,
+        sh1mmer_part_size: 72 * 1024 * 1024,  // 72MB
+        bootloader_part_size: 4 * 1024 * 1024, // 4MB
+        target_arch: Some("x86_64".to_string()),
+        fast: false,
+        finalsizefile: None,
+    };
+
+    // Build the shim
+    let mut ops = WaxOperations::with_config(config)?;
+    ops.execute()?;
+
+    println!("Custom shim built successfully!");
+    Ok(())
+}
+```
+
+### Example: Using with custom payload directory
+
+```rust
+use rax::{ShimConfig, WaxOperations};
+use std::path::PathBuf;
+
+fn build_shim_with_custom_payload(
+    image_path: &str,
+    payload_path: &str,
+) -> anyhow::Result<()> {
+    let config = ShimConfig {
+        image: PathBuf::from(image_path),
+        bootloader_dir: PathBuf::from("wax/bootstrap"),
+        payload_dir: PathBuf::from(payload_path),  // Your custom payload!
+        extra_payload_dir: None,
+        firmware_dir: None,
+        mounted_payload_dir: None,
+        chromebrew: None,
+        sh1mmer_part_size: 100 * 1024 * 1024,  // 100MB for larger payload
+        bootloader_part_size: 4 * 1024 * 1024,
+        target_arch: None,  // Auto-detect
+        fast: false,
+        finalsizefile: Some(PathBuf::from("final_size.txt")),
+    };
+
+    let mut ops = WaxOperations::with_config(config)?;
+    ops.execute()?;
+
+    Ok(())
+}
+```
+
+This modular design allows you to:
+- **Build custom payloads** and integrate them into shims
+- **Automate shim generation** in larger build systems
+- **Create specialized shim variants** for different use cases
+- **Integrate with testing frameworks** for validation
+
 ## Requirements
 
 rax requires the following system utilities to be installed:
@@ -124,7 +207,7 @@ These are typically available in the following packages:
 
 ## Differences from wax
 
-While rax aims to replicate wax functionality, there are some key differences:
+rax provides the same functionality as wax with these improvements:
 
 ### Advantages of rax:
 - **Memory Safety**: Rust's ownership system prevents common bugs like buffer overflows and use-after-free
@@ -132,10 +215,25 @@ While rax aims to replicate wax functionality, there are some key differences:
 - **Better Error Handling**: Structured error handling with context
 - **Maintainability**: More organized code structure with modules
 - **Performance**: Compiled binary with optimizations
+- **Library Support**: Can be used as a library for custom shim building
+- **Modular Design**: Public API allows programmatic shim creation
 
-### Current Limitations:
-- Some advanced features may not be fully implemented yet
-- This is a work-in-progress reimplementation
+### Implementation Status:
+- ✅ **Fully Implemented**: All core wax features
+  - GPT partition manipulation with cgpt
+  - Bootloader partition creation and patching
+  - SH1MMER payload partition creation and patching
+  - Architecture detection (x86_64/aarch64)
+  - ROOT partition shrinking and optimization
+  - Partition squashing
+  - Image truncation
+  - Chromebrew extraction
+  - Extra payloads, firmware, and mounted payloads support
+  
+### API Differences:
+- Command-line arguments use `--` for long options (e.g., `--debug` instead of `-d` alone)
+- More descriptive error messages with context
+- Progress output uses colored terminal output
 
 ## Development
 

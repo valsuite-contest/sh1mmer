@@ -5,6 +5,10 @@ edition = "2021"
 authors = ["SH1MMER Team"]
 description = "Rust implementation of the wax shim modifying automation tool"
 
+[lib]
+name = "rax"
+path = "src/lib.rs"
+
 [[bin]]
 name = "rax"
 path = "src/main.rs"
