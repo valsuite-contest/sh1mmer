@@ -1,6 +1,6 @@
 # rax - Rust implementation of wax
 
-**rax** is a Rust reimplementation of the wax shim modifying automation tool for SH1MMER. It provides the same core functionality as wax but written in Rust for improved performance, memory safety, and maintainability.
+**rax** is a standalone Rust reimplementation of the wax shim modifying automation tool for SH1MMER. It provides the same core functionality as wax but written in Rust for improved performance, memory safety, and maintainability.
 
 rax can be used both as a **command-line tool** and as a **library** for building custom shims programmatically.
 
@@ -16,6 +16,18 @@ rax is a tool for modifying ChromeOS factory shims to create SH1MMER images. It 
 6. Copies payload files, firmware, and optional components
 7. Optimizes and truncates the final image
 
+## Standalone and Self-Contained
+
+**rax is completely standalone** and includes everything needed except the payload:
+
+✅ **Bundled bootstrap** - Includes busybox binaries for x86_64 and aarch64 in `bootstrap/`
+✅ **Smart cgpt detection** - Finds cgpt in multiple locations or uses system cgpt
+✅ **No external dependencies** - Only needs the payload directory you want to use
+
+The only thing you need to provide is:
+- A factory shim image
+- A payload directory (or use the default sh1mmer payloads)
+
 ## Building
 
 To build rax, you need Rust installed (version 1.70 or later recommended):
@@ -29,11 +41,20 @@ The compiled binary will be located at `target/release/rax`.
 
 ## Usage as a Command-Line Tool
 
-Basic usage (equivalent to `wax.sh -i image.bin`):
-
+**With sh1mmer repository payloads** (from within sh1mmer repo):
 ```bash
+cd sh1mmer/rax
 sudo ./target/release/rax -i path/to/shim.bin
 ```
+
+This uses the bundled `bootstrap/` directory and looks for payloads in `../wax/sh1mmer_bw` by default.
+
+**Fully standalone with custom payload**:
+```bash
+sudo rax -i path/to/shim.bin --payload-dir /path/to/your/custom_payload
+```
+
+The bundled `bootstrap/` directory will be used automatically.
 
 ### Command-line Options
 
@@ -44,9 +65,10 @@ Options:
   
   -p, --payload <PAYLOAD>
           Main payload ('bw' or 'legacy') [default: bw]
+          Only used when --payload-dir is not specified
   
       --payload-dir <PAYLOAD_DIR>
-          Custom main payload directory
+          Custom main payload directory (required for standalone use)
   
   -s, --sh1mmer-part-size <SH1MMER_PART_SIZE>
           Partition size for payload(s) [default: 72M]
@@ -124,8 +146,8 @@ fn main() -> anyhow::Result<()> {
     // Create a custom configuration
     let config = ShimConfig {
         image: PathBuf::from("my_shim.bin"),
-        bootloader_dir: PathBuf::from("wax/bootstrap"),
-        payload_dir: PathBuf::from("my_custom_payload"),
+        bootloader_dir: PathBuf::from("bootstrap"),  // Your bootloader directory
+        payload_dir: PathBuf::from("my_custom_payload"),  // Your custom payload
         extra_payload_dir: None,
         firmware_dir: Some(PathBuf::from("custom_firmware")),
         mounted_payload_dir: None,
@@ -155,10 +177,11 @@ use std::path::PathBuf;
 fn build_shim_with_custom_payload(
     image_path: &str,
     payload_path: &str,
+    bootloader_path: &str,
 ) -> anyhow::Result<()> {
     let config = ShimConfig {
         image: PathBuf::from(image_path),
-        bootloader_dir: PathBuf::from("wax/bootstrap"),
+        bootloader_dir: PathBuf::from(bootloader_path),
         payload_dir: PathBuf::from(payload_path),  // Your custom payload!
         extra_payload_dir: None,
         firmware_dir: None,

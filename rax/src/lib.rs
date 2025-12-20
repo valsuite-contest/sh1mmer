@@ -12,7 +12,7 @@
 //! # fn main() -> anyhow::Result<()> {
 //! let config = ShimConfig {
 //!     image: PathBuf::from("my_shim.bin"),
-//!     bootloader_dir: PathBuf::from("wax/bootstrap"),
+//!     bootloader_dir: PathBuf::from("bootstrap"),
 //!     payload_dir: PathBuf::from("my_custom_payload"),
 //!     extra_payload_dir: None,
 //!     firmware_dir: None,

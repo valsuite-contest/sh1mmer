@@ -39,7 +39,23 @@ impl ShimConfig {
         let bootloader_dir = if let Some(dir) = args.bootloader_dir {
             dir
         } else {
-            PathBuf::from("wax/bootstrap")
+            // Default: use bundled bootstrap directory in rax
+            let default_dir = PathBuf::from("bootstrap");
+            if !default_dir.exists() {
+                // Fallback: look for wax bootstrap (for development within sh1mmer repo)
+                let fallback_dir = PathBuf::from("../wax/bootstrap");
+                if fallback_dir.exists() {
+                    fallback_dir
+                } else {
+                    anyhow::bail!(
+                        "Bootloader directory not found. \
+                        Please specify with --bootloader-dir or ensure 'bootstrap' directory exists. \
+                        Tried locations: bootstrap, ../wax/bootstrap"
+                    );
+                }
+            } else {
+                default_dir
+            }
         };
 
         if !bootloader_dir.is_dir() {
@@ -51,11 +67,21 @@ impl ShimConfig {
         let payload_dir = if let Some(dir) = args.payload_dir {
             dir
         } else {
-            match args.payload.as_str() {
-                "legacy" => PathBuf::from("wax/sh1mmer_legacy"),
-                "bw" => PathBuf::from("wax/sh1mmer_bw"),
+            // Default: look for payload directory relative to parent of rax
+            let default_dir = match args.payload.as_str() {
+                "legacy" => PathBuf::from("../wax/sh1mmer_legacy"),
+                "bw" => PathBuf::from("../wax/sh1mmer_bw"),
                 _ => anyhow::bail!("Invalid payload '{}'", args.payload),
+            };
+            
+            if !default_dir.exists() {
+                anyhow::bail!(
+                    "Payload directory not found. Please specify with --payload-dir. \
+                    Tried default location: {}",
+                    default_dir.display()
+                );
             }
+            default_dir
         };
 
         if !payload_dir.is_dir() {
@@ -127,19 +153,48 @@ pub struct WaxOperations {
 
 impl WaxOperations {
     // Helper to get cgpt path based on host architecture
-    fn get_cgpt_path() -> PathBuf {
+    fn get_cgpt_path() -> Result<PathBuf> {
         let host_arch = std::env::consts::ARCH;
         let cgpt_arch = match host_arch {
             "x86_64" => "x86_64",
             "aarch64" => "aarch64",
             _ => "x86_64", // default fallback
         };
-        PathBuf::from(format!("wax/lib/bin/{}/cgpt", cgpt_arch))
+        
+        // Try multiple locations for cgpt binary
+        let possible_paths = vec![
+            // 1. In rax's lib directory (standalone installation)
+            PathBuf::from(format!("lib/bin/{}/cgpt", cgpt_arch)),
+            // 2. Relative to parent wax directory (development/integrated mode)
+            PathBuf::from(format!("../wax/lib/bin/{}/cgpt", cgpt_arch)),
+            // 3. In system PATH
+            PathBuf::from("cgpt"),
+        ];
+        
+        for path in &possible_paths {
+            if path.exists() {
+                log_debug(&format!("Found cgpt at: {}", path.display()));
+                return Ok(path.clone());
+            }
+        }
+        
+        // If cgpt is in system PATH, use it
+        if which::which("cgpt").is_ok() {
+            log_debug("Using cgpt from system PATH");
+            return Ok(PathBuf::from("cgpt"));
+        }
+        
+        anyhow::bail!(
+            "cgpt binary not found. Tried locations:\n  {}\n\
+            Please install cgpt or ensure wax/lib/bin/{}/cgpt exists.",
+            possible_paths.iter().map(|p| p.display().to_string()).collect::<Vec<_>>().join("\n  "),
+            cgpt_arch
+        )
     }
 
     pub fn new(args: Args) -> Result<Self> {
         let config = ShimConfig::from_args(args)?;
-        let cgpt_path = Self::get_cgpt_path();
+        let cgpt_path = Self::get_cgpt_path()?;
         
         Ok(Self {
             config,
@@ -151,7 +206,7 @@ impl WaxOperations {
     /// Create a WaxOperations instance with a custom configuration
     /// This allows using rax as a library for custom shim building
     pub fn with_config(config: ShimConfig) -> Result<Self> {
-        let cgpt_path = Self::get_cgpt_path();
+        let cgpt_path = Self::get_cgpt_path()?;
         
         Ok(Self {
             config,
