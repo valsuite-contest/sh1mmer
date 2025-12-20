@@ -440,6 +440,23 @@ impl WaxOperations {
         anyhow::bail!("Could not find total sectors")
     }
 
+    fn get_partition_sectors(&self, device: &str, partition: u32) -> Result<u64> {
+        let output = Command::new(&self.cgpt_path)
+            .arg("show")
+            .arg("-i")
+            .arg(partition.to_string())
+            .arg("-s")
+            .arg("-n")
+            .arg("-q")
+            .arg(device)
+            .output()
+            .context("Failed to get partition sectors")?;
+
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        stdout.trim().parse::<u64>()
+            .context("Failed to parse partition sectors")
+    }
+
     fn resize_image_if_needed(&self, needed_sectors: u64) -> Result<()> {
         let loopdev = self.loopdev.as_ref().unwrap();
         let final_sector = self.get_final_sector(loopdev)?;
@@ -526,18 +543,21 @@ impl WaxOperations {
         self.enable_rw_mount(&part3)?;
 
         // Check and resize filesystem
-        Command::new("e2fsck")
-            .arg("-fy")
-            .arg(&part3)
-            .output()
-            .context("Failed to check filesystem")?;
+        let mut e2fsck_cmd = Command::new("e2fsck");
+        e2fsck_cmd.arg("-fy").arg(&part3);
+        if !crate::common::Logger::is_debug() {
+            e2fsck_cmd.stdout(std::process::Stdio::null())
+                .stderr(std::process::Stdio::null());
+        }
+        e2fsck_cmd.output().context("Failed to check filesystem")?;
 
-        Command::new("resize2fs")
-            .arg("-M")
-            .arg("-p")
-            .arg(&part3)
-            .output()
-            .context("Failed to resize filesystem")?;
+        let mut resize_cmd = Command::new("resize2fs");
+        resize_cmd.arg("-M").arg("-p").arg(&part3);
+        if !crate::common::Logger::is_debug() {
+            resize_cmd.stdout(std::process::Stdio::null())
+                .stderr(std::process::Stdio::null());
+        }
+        resize_cmd.output().context("Failed to resize filesystem")?;
 
         // Disable RW mount
         self.disable_rw_mount(&part3)?;
@@ -552,8 +572,42 @@ impl WaxOperations {
         let block_size = self.extract_tune2fs_value(&info, "Block size")?;
         let block_count = self.extract_tune2fs_value(&info, "Block count")?;
 
+        let sector_size = self.get_sector_size(loopdev)?;
+        
+        // Get original partition size
+        let original_sectors = self.get_partition_sectors(loopdev, 3)?;
+        let original_bytes = original_sectors * sector_size;
+
         let resized_bytes = block_count * block_size;
-        log_info(&format!("Resized ROOT to {}", format_bytes(resized_bytes)));
+        let resized_sectors = resized_bytes / sector_size;
+
+        log_info(&format!("Resizing ROOT from {} to {}", 
+            format_bytes(original_bytes), 
+            format_bytes(resized_bytes)));
+
+        // Update partition table with cgpt
+        let status = Command::new(&self.cgpt_path)
+            .arg("add")
+            .arg(loopdev)
+            .arg("-i")
+            .arg("3")
+            .arg("-s")
+            .arg(resized_sectors.to_string())
+            .status()
+            .context("Failed to update partition size with cgpt")?;
+
+        if !status.success() {
+            anyhow::bail!("cgpt add failed");
+        }
+
+        // Update kernel partition table
+        Command::new("partx")
+            .arg("-u")
+            .arg("-n")
+            .arg("3")
+            .arg(loopdev)
+            .status()
+            .context("Failed to update partition table in kernel")?;
 
         Ok(())
     }
@@ -856,14 +910,99 @@ impl WaxOperations {
 
     fn enable_rw_mount(&self, device: &str) -> Result<()> {
         log_debug(&format!("Enabling RW mount for {}", device));
-        // This would modify the ext2 filesystem flags
+        
+        // Check if it's an ext2 filesystem
+        if !self.is_ext2(device)? {
+            anyhow::bail!("enable_rw_mount called on non-ext2 filesystem: {}", device);
+        }
+
+        // Offset to the read-only compatible feature flag in ext2 superblock
+        // The superblock is at offset 1024, and ro_compat is at 0x464 + 3 bytes into it
+        let ro_compat_offset = 0x464 + 3;
+
+        // Write 0x00 to disable the read-only flag
+        let status = Command::new("dd")
+            .arg(format!("of={}", device))
+            .arg(format!("seek={}", ro_compat_offset))
+            .arg("conv=notrunc")
+            .arg("count=1")
+            .arg("bs=1")
+            .stdin(std::process::Stdio::piped())
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .spawn()
+            .and_then(|mut child| {
+                use std::io::Write;
+                if let Some(mut stdin) = child.stdin.take() {
+                    let _ = stdin.write_all(&[0x00]);
+                }
+                child.wait()
+            })
+            .context("Failed to enable RW mount")?;
+
+        if !status.success() {
+            anyhow::bail!("Failed to enable RW mount");
+        }
+
         Ok(())
     }
 
     fn disable_rw_mount(&self, device: &str) -> Result<()> {
         log_debug(&format!("Disabling RW mount for {}", device));
-        // This would modify the ext2 filesystem flags
+        
+        // Check if it's an ext2 filesystem
+        if !self.is_ext2(device)? {
+            anyhow::bail!("disable_rw_mount called on non-ext2 filesystem: {}", device);
+        }
+
+        // Offset to the read-only compatible feature flag in ext2 superblock
+        let ro_compat_offset = 0x464 + 3;
+
+        // Write 0xFF to enable the read-only flag
+        let status = Command::new("dd")
+            .arg(format!("of={}", device))
+            .arg(format!("seek={}", ro_compat_offset))
+            .arg("conv=notrunc")
+            .arg("count=1")
+            .arg("bs=1")
+            .stdin(std::process::Stdio::piped())
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .spawn()
+            .and_then(|mut child| {
+                use std::io::Write;
+                if let Some(mut stdin) = child.stdin.take() {
+                    let _ = stdin.write_all(&[0xFF]);
+                }
+                child.wait()
+            })
+            .context("Failed to disable RW mount")?;
+
+        if !status.success() {
+            anyhow::bail!("Failed to disable RW mount");
+        }
+
         Ok(())
+    }
+
+    fn is_ext2(&self, device: &str) -> Result<bool> {
+        // Check for ext2 magic number in superblock
+        // Superblock is at offset 0x400 (1024), magic is at offset 0x38 (56) into superblock
+        let sb_magic_offset = 0x438;
+
+        let output = Command::new("dd")
+            .arg(format!("if={}", device))
+            .arg(format!("skip={}", sb_magic_offset))
+            .arg("count=2")
+            .arg("bs=1")
+            .stderr(std::process::Stdio::null())
+            .output()
+            .context("Failed to read ext2 magic")?;
+
+        // ext2 magic number is 0xEF53 (little endian: 0x53 0xEF)
+        Ok(output.stdout.len() >= 2 && 
+           output.stdout[0] == 0x53 && 
+           output.stdout[1] == 0xEF)
     }
 
     fn extract_tune2fs_value(&self, info: &str, key: &str) -> Result<u64> {
